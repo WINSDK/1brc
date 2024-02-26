@@ -87,6 +87,24 @@ impl Record {
     }
 }
 
+fn parse_f32(input: &[u8]) -> f32 {
+    let neg = input[0] == b'-';
+    let len = input.len();
+
+    let (d1, d2, d3) = match (neg, len) {
+        (false, 3) => (0, input[0] - b'0', input[2] - b'0'),
+        (false, 4) => (input[0] - b'0', input[1] - b'0', input[3] - b'0'),
+        (true, 4) => (0, input[1] - b'0', input[3] - b'0'),
+        (true, 5) => (input[1] - b'0', input[2] - b'0', input[4] - b'0'),
+        _ => unreachable!(),
+    };
+
+    let int = (d1 as i16 * 100) + (d2 as i16 * 10) + (d3 as i16);
+    let int = if neg { -int } else { int };
+
+    int as f32 / 10.0
+}
+
 fn parse(input: &str) -> String {
     let input = input.strip_suffix("\n").unwrap_or(input);
     let mut map = HashMap::new();
@@ -94,7 +112,7 @@ fn parse(input: &str) -> String {
     for row in Rows::new(input) {
         let separator = memchr(b';', row.as_bytes()).expect("Missing seperator.");
         let (city, sample) = (&row[..separator], &row[separator + 1..]);
-        let sample = sample.parse::<f32>().unwrap();
+        let sample = parse_f32(sample.as_bytes());
 
         match map.entry(city) {
             Entry::Vacant(slot) => {
