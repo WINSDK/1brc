@@ -1,0 +1,17 @@
+[package]
+name = "onebrc"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+memchr = "2.7"
+memmap2 = "0.9"
+
+[profile.dev]
+lto = "thin"
+panic = 'abort'
+
+[profile.release]
+debug = true
+lto = "thin"
+panic = 'abort'
