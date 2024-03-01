@@ -123,8 +123,6 @@ impl<'a> Record<'a> {
 }
 
 pub fn parse_from_str(input: &str) -> String {
-    let input = input.strip_suffix("\n").unwrap_or(input);
-
     let thread_count = std::thread::available_parallelism()
         .map(|x| x.get())
         .unwrap_or(4);

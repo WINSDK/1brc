@@ -10,10 +10,10 @@ memmap2 = "0.9"
 rustc-hash = "1.1.0"
 
 [profile.dev]
-lto = "thin"
 panic = 'abort'
 
 [profile.release]
 debug = true
 lto = "thin"
 panic = 'abort'
+codegen-units = 1
