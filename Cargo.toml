@@ -4,8 +4,10 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+hashbrown = { version = "0.14.3", default-features = false, features = ["inline-more"] }
 memchr = "2.7"
 memmap2 = "0.9"
+rustc-hash = "1.1.0"
 
 [profile.dev]
 lto = "thin"

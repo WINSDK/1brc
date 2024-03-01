@@ -16,7 +16,7 @@ fn run_test(input_file: &str, output_file: &str) {
 }
 
 #[test]
-fn test_measurements_1() {
+fn measurements_1() {
     run_test("measurements-1.txt", "measurements-1.out");
 }
 
