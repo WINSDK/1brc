@@ -1,23 +1,32 @@
 mod split;
 mod tests;
 
-use hashbrown::hash_table::Entry;
 use memchr::memchr;
-
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::mpsc;
 
-type Map<'a> = hashbrown::HashTable<(u64, Record<'a>)>;
-
 #[inline(always)]
-fn hack_map_entry<'map, 'record>(
-    map: &'map mut Map<'record>,
-    hash: u64,
-) -> Entry<'map, (u64, Record<'record>)> {
-    // Intentionally use wrong eq operator (instead of city name) for better performances.
-    // If there are multiple city with same hash, they will collide.
-    map.entry(hash, |(x, _)| *x == hash, |(x, _)| *x)
+fn parse_temperature(input: &[u8]) -> i32 {
+    const MAGIC_MULTIPLIER: i64 = 100 * 0x1000000 + 10 * 0x10000 + 1;
+    const DOT_BITS: i64 = 0x10101000;
+
+    #[inline(always)]
+    fn dot(n: i64) -> i64 {
+        (!n & DOT_BITS).trailing_zeros() as i64
+    }
+
+    #[inline(always)]
+    fn value(w: i64, dot: i64) -> i64 {
+        let signed = (!w).wrapping_shl(59).wrapping_shr(63);
+        let mask = !(signed & 0xFF);
+        let digits = ((w & mask) << (28 - dot)) & 0x0F000F0F00;
+        let abs = digits.wrapping_mul(MAGIC_MULTIPLIER) >> 32 & 0x3FF;
+        ((abs ^ signed) - signed) as i64
+    }
+
+    let n = unsafe { std::ptr::read(input.as_ptr() as *const i64) };
+    value(n, dot(n)) as i32
 }
 
 struct Rows<'a> {
@@ -59,14 +68,14 @@ impl<'a> Iterator for Rows<'a> {
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 struct Record<'a> {
     city: &'a str,
-    min: f32,
-    sum: f32,
-    max: f32,
+    min: i32,
+    sum: i32,
+    max: i32,
     count: usize,
 }
 
 impl<'a> Record<'a> {
-    fn new(value: f32, city: &'a str) -> Self {
+    fn new(value: i32, city: &'a str) -> Self {
         Self {
             city,
             min: value,
@@ -89,7 +98,7 @@ impl<'a> Record<'a> {
     }
 
     #[inline(always)]
-    fn add(&mut self, value: f32) {
+    fn add(&mut self, value: i32) {
         if value < self.min {
             self.min = value;
         }
@@ -101,56 +110,16 @@ impl<'a> Record<'a> {
     }
 
     fn write(&self, out: &mut Vec<u8>) {
-        let min = self.min;
-        let max = self.max;
+        let min = self.min as f32 / 10.0;
+        let max = self.max as f32 / 10.0;
         let avg = {
-            // Kinda scuffed method of avoiding rounding errors
-            let mean = self.sum / self.count as f32;
+            // Kinda scuffed method of avoiding rounding errors.
+            let mean = (self.sum as f32 / 10.0) / self.count as f32;
             (mean * 10.0).round() / 10.0
         };
 
         write!(out, "{min:.1}/{avg:.1}/{max:.1}").unwrap();
     }
-}
-
-#[inline(always)]
-fn parse_temperature(input: &[u8]) -> f32 {
-    const MAGIC_MULTIPLIER: u64 = 100 * 0x1000000 + 10 * 0x10000 + 1;
-    const DOT_BITS: u64 = 0x10101000;
-
-    #[inline(always)]
-    fn dot(n: u64) -> u64 {
-        (!n & DOT_BITS).trailing_zeros() as u64
-    }
-
-    // Function to parse the temperature from a u64 word, given the dot position
-    fn value(w: u64, dot: u64) -> i64 {
-        let signed = (!w).wrapping_shl(59).wrapping_shr(63);
-        let mask = !(signed & 0xFF);
-        let digits = ((w & mask) << (28 - dot)) & 0x0F000F0F00;
-        let abs = digits.wrapping_mul(MAGIC_MULTIPLIER) >> 32 & 0x3FF;
-        ((abs as i64) ^ (signed as i64)) - (signed as i64)
-    }
-
-    let n = unsafe { std::ptr::read(input.as_ptr() as *const u32) as u64 };
-    let dot = dot(n);
-    return (value(n, dot) as f64 / 10.0) as f32;
-
-    // let neg = input[0] == b'-';
-    // let len = input.len();
-
-    // let (d1, d2, d3) = match (neg, len) {
-    //     (false, 3) => (0, input[0] - b'0', input[2] - b'0'),
-    //     (false, 4) => (input[0] - b'0', input[1] - b'0', input[3] - b'0'),
-    //     (true, 4) => (0, input[1] - b'0', input[3] - b'0'),
-    //     (true, 5) => (input[1] - b'0', input[2] - b'0', input[4] - b'0'),
-    //     _ => unreachable!(),
-    // };
-
-    // let int = (d1 as i16 * 100) + (d2 as i16 * 10) + (d3 as i16);
-    // let int = if neg { -int } else { int };
-
-    // int as f32 * 0.1
 }
 
 pub fn parse_from_str(input: &str) -> String {
@@ -168,7 +137,7 @@ pub fn parse_from_str(input: &str) -> String {
         for chunk in chunks {
             let tx = tx.clone();
             s.spawn(move || {
-                let mut local_map = Map::with_capacity(1024);
+                let mut local_map = hashbrown::HashTable::<(u64, Record)>::with_capacity(1024);
 
                 for row in Rows::new(chunk) {
                     let separator = memchr(b';', row.as_bytes()).expect("Missing seperator.");
@@ -190,7 +159,8 @@ pub fn parse_from_str(input: &str) -> String {
 
                     let sample = parse_temperature(sample.as_bytes());
 
-                    hack_map_entry(&mut local_map, hash)
+                    // very dumb hack that avoids comparisons but may cause collisions
+                    local_map.entry(hash, |(x, _)| *x == hash, |(x, _)| *x)
                         .and_modify(|(_, existing)| existing.add(sample))
                         .or_insert_with(|| (hash, Record::new(sample, city)));
                 }
