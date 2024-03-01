@@ -6,6 +6,12 @@ use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::mpsc;
 
+#[cfg(target_arch = "x86")]
+use core::arch::x86 as intrinsics;
+
+#[cfg(target_arch = "x86_64")]
+use core::arch::x86_64 as intrinsics;
+
 #[inline(always)]
 fn parse_temperature(input: &[u8]) -> i32 {
     const MAGIC_MULTIPLIER: i64 = 100 * 0x1000000 + 10 * 0x10000 + 1;
@@ -47,6 +53,11 @@ impl<'a> Iterator for Rows<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.start >= self.input.len() {
             return None;
+        }
+
+        // prefetch next cache line
+        unsafe {
+            intrinsics::_mm_prefetch(self.input.as_ptr() as *const i8, intrinsics::_MM_HINT_NTA);
         }
 
         let input_bytes = unsafe { self.input.as_bytes().get_unchecked(self.start..) };
@@ -158,7 +169,8 @@ pub fn parse_from_str(input: &str) -> String {
                     let sample = parse_temperature(sample.as_bytes());
 
                     // very dumb hack that avoids comparisons but may cause collisions
-                    local_map.entry(hash, |(x, _)| *x == hash, |(x, _)| *x)
+                    local_map
+                        .entry(hash, |(x, _)| *x == hash, |(x, _)| *x)
                         .and_modify(|(_, existing)| existing.add(sample))
                         .or_insert_with(|| (hash, Record::new(sample, city)));
                 }
